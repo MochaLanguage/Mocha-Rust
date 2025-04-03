@@ -1,9 +1,16 @@
 use std::fs;
 use regex::Regex;
+use std::sync::atomic::{AtomicUsize, Ordering};
+
+static LINE: AtomicUsize = AtomicUsize::new(0);
 
 fn main() {
     let parsed_contents = parse(r"C:\Users\busin\OneDrive\Documents\GitHub\Mocha-Rust\src\main.mocha");
     println!("{:?}", parsed_contents);
+    loop {
+        let line = LINE.load(Ordering::SeqCst);
+        run(&line, &parsed_contents);
+    }
 }
 
 fn parse(filepath: &str) -> Vec<Vec<String>> {
@@ -29,4 +36,25 @@ fn parse(filepath: &str) -> Vec<Vec<String>> {
     }
 
     replaced_lines
+}
+
+fn run(line: &usize, lines: &Vec<Vec<String>>) {
+    match lines[*line][0].as_str() {
+        "out" => {
+            for i in 1..lines[*line].len() {
+                let output = &lines[*line][i];
+                if output.starts_with('"') && output.ends_with('"') {
+                    print!("{}", &output[1..output.len() - 1]);
+                } else {
+                    //variablez n stuff
+                    print!("{}", output);
+                }
+            }
+            LINE.store(LINE.load(Ordering::SeqCst) + 1, Ordering::SeqCst);
+        }
+        "end" => {
+            std::process::exit(0)        
+        }
+        _ => {}
+    }
 }
