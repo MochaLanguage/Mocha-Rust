@@ -1,0 +1,3 @@
+out "hello world!\n"
+out "hi there"
+end
