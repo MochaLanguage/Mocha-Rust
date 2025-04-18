@@ -1,12 +1,26 @@
 use std::fs;
+use std::collections::HashMap;
 use regex::Regex;
 use std::sync::atomic::{AtomicUsize, Ordering};
 
 static LINE: AtomicUsize = AtomicUsize::new(0);
 
+#[derive(Debug, Clone)]
+enum VariableValue {
+    Int(i128),
+    Float(f64),
+    Str(String),
+    Bool(bool),
+}
+
+static mut VARS: Option<HashMap<String, VariableValue>> = None;
+
 fn main() {
+    unsafe {
+        VARS = Some(HashMap::new());
+    }
     let parsed_contents = parse(r"C:\Users\busin\OneDrive\Documents\GitHub\Mocha-Rust\src\main.mocha");
-    println!("{:?}", parsed_contents);
+    // println!("{:?}", parsed_contents);
     loop {
         let line = LINE.load(Ordering::SeqCst);
         run(&line, &parsed_contents);
@@ -16,9 +30,13 @@ fn main() {
 fn parse(filepath: &str) -> Vec<Vec<String>> {
     //read the file
     let rawfile = fs::read_to_string(filepath).expect("woopsies");
-    //fix spaces
+    let rawfile = rawfile.replace("\\\\", "\0");
+    //fixed spaces
     let re = Regex::new(r#""([^"]*)""#).unwrap();
-    let processed_file = re.replace_all(&rawfile, |caps: &regex::Captures| {
+    let replaced_quotes = re.replace_all(&rawfile, |caps: &regex::Captures| {
+        caps[0].replace('\0', "\\")
+    });
+    let processed_file = re.replace_all(&replaced_quotes, |caps: &regex::Captures| {
         caps[0].replace(' ', "\0")
     });
     //split to tokens
@@ -48,6 +66,25 @@ fn run(line: &usize, lines: &Vec<Vec<String>>) {
                 } else {
                     //variablez n stuff
                     print!("{}", output);
+                }
+            }
+            LINE.store(LINE.load(Ordering::SeqCst) + 1, Ordering::SeqCst);
+        }
+        "var" => {
+            unsafe { //just making it a bit easier so i dont have to keep writing unsafe{}
+                match lines[*line][1].as_str() {
+                    "int" => {
+                        match lines[*line][3].as_str() {
+                            "set" => {
+                                // set the lines[line][2] key in VARS to the value of lines[line][4] IF lines[line][4] is an int
+                                if lines[*line][4].parse::<i128>().is_ok() {
+                                    // &VARS.unwrap().insert(lines[*line][2].clone(), VariableValue::Int(lines[*line][4].parse::<i128>().unwrap()));
+                                }
+                            }
+                            _ => {}
+                        }
+                    }
+                    _ => {}
                 }
             }
             LINE.store(LINE.load(Ordering::SeqCst) + 1, Ordering::SeqCst);
