@@ -2,6 +2,8 @@ use std::fs;
 use std::collections::HashMap;
 use regex::Regex;
 use std::sync::atomic::{AtomicUsize, Ordering};
+use once_cell::sync::Lazy;
+use std::sync::Mutex;
 
 static LINE: AtomicUsize = AtomicUsize::new(0);
 
@@ -13,14 +15,12 @@ enum VariableValue {
     Bool(bool),
 }
 
-static mut VARS: Option<HashMap<String, VariableValue>> = None;
+static VARS: Lazy<Mutex<HashMap<String, VariableValue>>> = Lazy::new(|| {
+    Mutex::new(HashMap::new())
+});
 
 fn main() {
-    unsafe {
-        VARS = Some(HashMap::new());
-    }
     let parsed_contents = parse(r"C:\Users\busin\OneDrive\Documents\GitHub\Mocha-Rust\src\main.mocha");
-    // println!("{:?}", parsed_contents);
     loop {
         let line = LINE.load(Ordering::SeqCst);
         run(&line, &parsed_contents);
@@ -65,27 +65,165 @@ fn run(line: &usize, lines: &Vec<Vec<String>>) {
                     print!("{}", &output[1..output.len() - 1]);
                 } else {
                     //variablez n stuff
-                    print!("{}", output);
+                    print!("{}", vars.get(output).as_str());
                 }
             }
             LINE.store(LINE.load(Ordering::SeqCst) + 1, Ordering::SeqCst);
         }
         "var" => {
-            unsafe { //just making it a bit easier so i dont have to keep writing unsafe{}
-                match lines[*line][1].as_str() {
-                    "int" => {
-                        match lines[*line][3].as_str() {
-                            "set" => {
-                                // set the lines[line][2] key in VARS to the value of lines[line][4] IF lines[line][4] is an int
-                                if lines[*line][4].parse::<i128>().is_ok() {
-                                    // &VARS.unwrap().insert(lines[*line][2].clone(), VariableValue::Int(lines[*line][4].parse::<i128>().unwrap()));
+            let mut vars = VARS.lock().unwrap();
+            match lines[*line][1].as_str() {
+                "int" => {
+                    match lines[*line][3].as_str() {
+                        "set" => {
+                            if let Ok(num) = lines[*line][4].parse::<i128>() {
+                                vars.insert(lines[*line][2].clone(), VariableValue::Int(num));
+                            } 
+                            else if let Some(VariableValue::Int(val)) = vars.get(&lines[*line][4]) {
+                                vars.insert(lines[*line][2].clone(), VariableValue::Int(*val));
+                            }                       
+                        }
+                        "add" => {
+                            if let Ok(num) = lines[*line][4].parse::<i128>() {
+                                vars.insert(lines[*line][2].clone(), VariableValue::Int(vars.get(lines[*line][2].clone())) + VariableValue::Int(num));
+                            }
+                            else if let Some(VariableValue::Int(val)) = vars.get(&lines[*line][4]) {
+                                vars.insert(lines[*line][2].clone(), VariableValue::Int(vars.get(lines[*line][2].clone())) + VariableValue::Int(*val));
+                            }
+                        }
+                        "sub" => {
+                            if let Ok(num) = lines[*line][4].parse::<i128>() {
+                                vars.insert(lines[*line][2].clone(), VariableValue::Int(vars.get(lines[*line][2].clone())) - VariableValue::Int(num));
+                            }
+                            else if let Some(VariableValue::Int(val)) = vars.get(&lines[*line][4]) {
+                                vars.insert(lines[*line][2].clone(), VariableValue::Int(vars.get(lines[*line][2].clone())) - VariableValue::Int(*val));
+                            }
+                        }
+                        "mlt" => {
+                            if let Ok(num) = lines[*line][4].parse::<i128>() {
+                                vars.insert(lines[*line][2].clone(), VariableValue::Int(vars.get(lines[*line][2].clone())) * VariableValue::Int(num));
+                            }
+                            else if let Some(VariableValue::Int(val)) = vars.get(&lines[*line][4]) {
+                                vars.insert(lines[*line][2].clone(), VariableValue::Int(vars.get(lines[*line][2].clone())) * VariableValue::Int(*val));
+                            }
+                        }
+                        "div" => {
+                            if let Ok(num) = lines[*line][4].parse::<i128>() {
+                                vars.insert(lines[*line][2].clone(), VariableValue::Int(vars.get(lines[*line][2].clone())) / VariableValue::Int(num));
+                            }
+                            else if let Some(VariableValue::Int(val)) = vars.get(&lines[*line][4]) {
+                                vars.insert(lines[*line][2].clone(), VariableValue::Int(vars.get(lines[*line][2].clone())) / VariableValue::Int(*val));
+                            }
+                        }
+                        "mod" => {
+                            if let Ok(num) = lines[*line][4].parse::<i128>() {
+                                vars.insert(lines[*line][2].clone(), VariableValue::Int(vars.get(lines[*line][2].clone())).rem_euclid(VariableValue::Int(num)));
+                            }                                 
+                            else if let Some(VariableValue::Int(val)) = vars.get(&lines[*line][4]) {
+                                vars.insert(lines[*line][2].clone(), VariableValue::Int(vars.get(lines[*line][2].clone())).rem_euclid(VariableValue::Int(*val)));
+                            }
+                        }
+                        "pow" => {
+                            if let Ok(num) = lines[*line][4].parse::<i128>() {
+                                vars.insert(lines[*line][2].clone(), pow(VariableValue::Int(vars.get(lines[*line][2].clone())), VariableValue::Int(num)));
+                            }
+                            else if let Some(VariableValue::Int(val)) = vars.get(&lines[*line][4]) {
+                                vars.insert(lines[*line][2].clone(), pow(VariableValue::Int(vars.get(lines[*line][2].clone())), VariableValue::Int(*val)));
+                            }
+                        }
+                        _ => {}
+                    }
+                }
+                "dbl" => {
+                    match lines[*line][3].as_str() {
+                        "set" => {
+                            if let Ok(num) = lines[*line][4].parse::<f128>() {
+                                vars.insert(lines[*line][2].clone(), VariableValue::Float(num));
+                            } 
+                            else if let Some(VariableValue::Float(val)) = vars.get(&lines[*line][4]) {
+                                vars.insert(lines[*line][2].clone(), VariableValue::Float(*val));
+                            }                       
+                        }
+                        "add" => {
+                            if let Ok(num) = lines[*line][4].parse::<f128>() {
+                                vars.insert(lines[*line][2].clone(), VariableValue::Float(vars.get(lines[*line][2].clone())) + VariableValue::Float(num));
+                            }
+                            else if let Some(VariableValue::Float(val)) = vars.get(&lines[*line][4]) {
+                                vars.insert(lines[*line][2].clone(), VariableValue::Float(vars.get(lines[*line][2].clone())) + VariableValue::Float(*val));
+                            }
+                        }
+                        "sub" => {
+                            if let Ok(num) = lines[*line][4].parse::<f128>() {
+                                vars.insert(lines[*line][2].clone(), VariableValue::Float(vars.get(lines[*line][2].clone())) - VariableValue::Float(num));
+                            }
+                            else if let Some(VariableValue::Float(val)) = vars.get(&lines[*line][4]) {
+                                vars.insert(lines[*line][2].clone(), VariableValue::Float(vars.get(lines[*line][2].clone())) - VariableValue::Float(*val));
+                            }
+                        }
+                        "mlt" => {
+                            if let Ok(num) = lines[*line][4].parse::<f128>() {
+                                vars.insert(lines[*line][2].clone(), VariableValue::Float(vars.get(lines[*line][2].clone())) * VariableValue::Float(num));
+                            }
+                            else if let Some(VariableValue::Float(val)) = vars.get(&lines[*line][4]) {
+                                vars.insert(lines[*line][2].clone(), VariableValue::Float(vars.get(lines[*line][2].clone())) * VariableValue::Float(*val));
+                            }
+                        }
+                        "div" => {
+                            if let Ok(num) = lines[*line][4].parse::<f128>() {
+                                vars.insert(lines[*line][2].clone(), VariableValue::Float(vars.get(lines[*line][2].clone())) / VariableValue::Float(num));
+                            }
+                            else if let Some(VariableValue::Float(val)) = vars.get(&lines[*line][4]) {
+                                vars.insert(lines[*line][2].clone(), VariableValue::Float(vars.get(lines[*line][2].clone())) / VariableValue::Float(*val));
+                            }
+                        }
+                        "mod" => {
+                            if let Ok(num) = lines[*line][4].parse::<f128>() {
+                                vars.insert(lines[*line][2].clone(), VariableValue::Float(vars.get(lines[*line][2].clone())).rem_euclid(VariableValue::Float(num)));
+                            }                                 
+                            else if let Some(VariableValue::Float(val)) = vars.get(&lines[*line][4]) {
+                                vars.insert(lines[*line][2].clone(), VariableValue::Float(vars.get(lines[*line][2].clone())).rem_euclid(VariableValue::Float(*val)));
+                            }
+                        }
+                        "pow" => {
+                            if let Ok(num) = lines[*line][4].parse::<f128>() {
+                                vars.insert(lines[*line][2].clone(), pow(VariableValue::Float(vars.get(lines[*line][2].clone())), VariableValue::Float(num)));
+                            }
+                            else if let Some(VariableValue::Float(val)) = vars.get(&lines[*line][4]) {
+                                vars.insert(lines[*line][2].clone(), pow(VariableValue::Float(vars.get(lines[*line][2].clone())), VariableValue::Float(*val)));
+                            }
+                        }
+                        _ => {}
+                    }
+                }
+                "bln" => {
+                    match lines[*line][3].as_str() {
+                        "bin" => {
+                            match lines[*line][4].as_str() {
+                                "and" => {
+                                    vars.insert(lines[*line][2].clone(), VariableValue::Boolean(vars.get(lines[*line][5].clone())) && VariableValue::Boolean(vars.get(lines[*line][6].clone())))
+                                }
+                                "orr" => {
+                                    vars.insert(lines[*line][2].clone(), VariableValue::Boolean(vars.get(lines[*line][5].clone())) || VariableValue::Boolean(vars.get(lines[*line][6].clone())))
+                                }
+                                "xor" => {
+                                    vars.insert(lines[*line][2].clone(), VariableValue::Boolean(vars.get(lines[*line][5].clone())) ^ VariableValue::Boolean(vars.get(lines[*line][6].clone())))
+                                }
+                                "not" => {
+                                    vars.insert(lines[*line][2].clone(), VariableValue::Boolean(vars.get(lines[*line][5].clone())))
                                 }
                             }
-                            _ => {}
+                        }
+                        "str" => {
+                            match lines[*line][4].as_str() {
+                                "eql" => {
+                                    
+                                    vars.insert(lines[*line][2].clone(), assert_eq!(VariableValue::Str(vars.get(lines[*line][5].clone())), VariableValue::Boolean(vars.get(lines[*line][6].clone()))))
+                                }
+                            }
                         }
                     }
-                    _ => {}
                 }
+                _ => {}
             }
             LINE.store(LINE.load(Ordering::SeqCst) + 1, Ordering::SeqCst);
         }
