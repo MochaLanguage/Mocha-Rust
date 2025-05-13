@@ -7,7 +7,7 @@ use std::sync::Mutex;
 
 static LINE: AtomicUsize = AtomicUsize::new(0);
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq, PartialOrd)]
 enum VariableValue {
     Int(i128),
     Float(f64),
@@ -48,12 +48,47 @@ fn parse(filepath: &str) -> Vec<Vec<String>> {
     //replace the \0 with spaces
     for i in 0..replaced_lines.len() {
         for j in 0..replaced_lines[i].len() {
-            replaced_lines[i][j] = replaced_lines[i][j].replace('\0', " ");
-            replaced_lines[i][j] = replaced_lines[i][j].replace("\\n", "\n");
+            replaced_lines[i][j] = replaced_lines[i][j].replace('\0', " "); //erm what the sigma
+            /* ---- replaced_lines[i][j] = replaced_lines[i][j].replace("\\n", "\n"); --- */
         }
     }
-
+    //no more blank lines yippeeee (only more efficient in larger files)
+    if replaced_lines.len() > 100 {
+        for i in replaced_lines.len().iter() {
+            if replaced_lines[i].len()==0 {
+                replaced_lines.remove(i);
+            }
+        }
+    }
     replaced_lines
+}
+
+fn get_var_str(key: &str, vars: &HashMap<String, VariableValue>) -> String {
+    match vars.get(key) {
+        Some(VariableValue::Str(s)) => s.clone(),
+        _ => panic!("uh oh"),
+    }
+}
+
+fn get_var_int(key: &str, vars: &HashMap<String, VariableValue>) -> i128 {
+    match vars.get(key) {
+        Some(VariableValue::Int(i)) => *i,
+        _ => panic!("uh oh"),
+    }
+}
+
+fn get_var_dbl(key: &str, vars: &HashMap<String, VariableValue>) -> f64 {
+    match vars.get(key) {
+        Some(VariableValue::Float(f)) => *f,
+        _ => panic!("uh oh"),
+    }
+}
+
+fn get_var_bool(key: &str, vars: &HashMap<String, VariableValue>) -> bool {
+    match vars.get(key) {
+        Some(VariableValue::Bool(b)) => *b,
+        _ => panic!("uh oh"),
+    }
 }
 
 fn run(line: &usize, lines: &Vec<Vec<String>>) {
@@ -64,7 +99,6 @@ fn run(line: &usize, lines: &Vec<Vec<String>>) {
                 if output.starts_with('"') && output.ends_with('"') {
                     print!("{}", &output[1..output.len() - 1]);
                 } else {
-                    //variablez n stuff
                     print!("{}", vars.get(output).as_str());
                 }
             }
@@ -75,13 +109,13 @@ fn run(line: &usize, lines: &Vec<Vec<String>>) {
             match lines[*line][1].as_str() {
                 "int" => {
                     match lines[*line][3].as_str() {
-                        "set" => {
+                        "set" => { //var int a add b    (a+=b)
                             if let Ok(num) = lines[*line][4].parse::<i128>() {
                                 vars.insert(lines[*line][2].clone(), VariableValue::Int(num));
-                            } 
+                            }
                             else if let Some(VariableValue::Int(val)) = vars.get(&lines[*line][4]) {
                                 vars.insert(lines[*line][2].clone(), VariableValue::Int(*val));
-                            }                       
+                            }
                         }
                         "add" => {
                             if let Ok(num) = lines[*line][4].parse::<i128>() {
@@ -137,7 +171,7 @@ fn run(line: &usize, lines: &Vec<Vec<String>>) {
                 "dbl" => {
                     match lines[*line][3].as_str() {
                         "set" => {
-                            if let Ok(num) = lines[*line][4].parse::<f128>() {
+                            if let Ok(num) = lines[*line][4].parse::<f64>() {
                                 vars.insert(lines[*line][2].clone(), VariableValue::Float(num));
                             } 
                             else if let Some(VariableValue::Float(val)) = vars.get(&lines[*line][4]) {
@@ -200,28 +234,116 @@ fn run(line: &usize, lines: &Vec<Vec<String>>) {
                         "bin" => {
                             match lines[*line][4].as_str() {
                                 "and" => {
-                                    vars.insert(lines[*line][2].clone(), VariableValue::Boolean(vars.get(lines[*line][5].clone())) && VariableValue::Boolean(vars.get(lines[*line][6].clone())))
+                                    vars.insert(lines[*line][2].clone(), VariableValue::Boolean(vars.get(lines[*line][5].clone())) && VariableValue::Boolean(vars.get(lines[*line][6].clone())));
                                 }
                                 "orr" => {
-                                    vars.insert(lines[*line][2].clone(), VariableValue::Boolean(vars.get(lines[*line][5].clone())) || VariableValue::Boolean(vars.get(lines[*line][6].clone())))
+                                    vars.insert(lines[*line][2].clone(), VariableValue::Boolean(vars.get(lines[*line][5].clone())) || VariableValue::Boolean(vars.get(lines[*line][6].clone())));
                                 }
                                 "xor" => {
-                                    vars.insert(lines[*line][2].clone(), VariableValue::Boolean(vars.get(lines[*line][5].clone())) ^ VariableValue::Boolean(vars.get(lines[*line][6].clone())))
+                                    vars.insert(lines[*line][2].clone(), VariableValue::Boolean(vars.get(lines[*line][5].clone())) ^ VariableValue::Boolean(vars.get(lines[*line][6].clone())));
                                 }
                                 "not" => {
-                                    vars.insert(lines[*line][2].clone(), VariableValue::Boolean(vars.get(lines[*line][5].clone())))
+                                    vars.insert(lines[*line][2].clone(), VariableValue::Boolean(vars.get(lines[*line][5].clone())));
                                 }
                             }
                         }
                         "str" => {
                             match lines[*line][4].as_str() {
                                 "eql" => {
-                                    
-                                    vars.insert(lines[*line][2].clone(), assert_eq!(VariableValue::Str(vars.get(lines[*line][5].clone())), VariableValue::Boolean(vars.get(lines[*line][6].clone()))))
+                                    if let Some(VariableValue::Str(val)) = vars.get(&lines[*line][5]) {
+                                        if let Some(VariableValue::Str(val)) = vars.get(&lines[*line][6]) { //11
+                                            vars.insert(lines[*line][2].clone(), assert_eq!(VariableValue::Str(vars.get(lines[*line][5].clone())), VariableValue::Str(vars.get(lines[*line][6].clone()))));
+                                        } 
+                                        else { //10
+                                            vars.insert(lines[*line][2].clone(), assert_eq!(VariableValue::Str(vars.get(lines[*line][5].clone())), lines[*line][6]));
+                                        }
+                                    }
+                                    else {
+                                        if let Some(VariableValue::Str(val)) = vars.get(&lines[*line][6]) { //01
+                                            vars.insert(lines[*line][2].clone(), assert_eq!(lines[*line][5], VariableValue::Str(vars.get(lines[*line][6].clone()))));
+                                        } 
+                                        else { //00
+                                            vars.insert(lines[*line][2].clone(), assert_eq!(lines[*line][5], lines[*line][6]));
+                                        }
+                                    }
                                 }
-                            }
+                             }
+                        }
+                        "num" => {
+                            match lines[*line][4].as_str() {
+                                "eql" => {
+                                    if let Some(VariableValue::Int(val)) = vars.get(&lines[*line][5]) {
+                                        if let Some(VariableValue::Int(val)) = vars.get(&lines[*line][6]) { //11
+                                            vars.insert(lines[*line][2].clone(), VariableValue::Int(vars.get(lines[*line][5].clone())) == VariableValue::Str(vars.get(lines[*line][6].clone())));
+                                        } 
+                                        else { //10
+                                            vars.insert(lines[*line][2].clone(), VariableValue::Int(vars.get(lines[*line][5].clone())) == lines[*line][6]);
+                                        }
+                                    }
+                                    else {
+                                        if let Some(VariableValue::Int(val)) = vars.get(&lines[*line][6]) { //01
+                                            vars.insert(lines[*line][2].clone(), lines[*line][5] == VariableValue::Int(vars.get(lines[*line][6].clone())));
+                                        } 
+                                        else { //00
+                                            vars.insert(lines[*line][2].clone(), lines[*line][5] == lines[*line][6]);
+                                        }
+                                    }
+                                }
+                                "grt" => {
+                                    if let Some(VariableValue::Int(val)) = vars.get(&lines[*line][5]) {
+                                        if let Some(VariableValue::Int(val)) = vars.get(&lines[*line][6]) { //11
+                                            vars.insert(lines[*line][2].clone(), VariableValue::Int(vars.get(lines[*line][5].clone())) > VariableValue::Str(vars.get(lines[*line][6].clone())));
+                                        } 
+                                        else { //10
+                                            vars.insert(lines[*line][2].clone(), VariableValue::Int(vars.get(lines[*line][5].clone())) > lines[*line][6]);
+                                        }
+                                    }
+                                    else {
+                                        if let Some(VariableValue::Int(val)) = vars.get(&lines[*line][6]) { //01
+                                            vars.insert(lines[*line][2].clone(), lines[*line][5] > VariableValue::Int(vars.get(lines[*line][6].clone())));
+                                        } 
+                                        else { //00
+                                            vars.insert(lines[*line][2].clone(), lines[*line][5] > lines[*line][6]);
+                                        }
+                                    }
+                                }
+                                "lss" => {
+                                    if let Some(VariableValue::Int(val)) = vars.get(&lines[*line][5]) {
+                                        if let Some(VariableValue::Int(val)) = vars.get(&lines[*line][6]) { //11
+                                            vars.insert(lines[*line][2].clone(), VariableValue::Int(vars.get(lines[*line][5].clone())) < VariableValue::Str(vars.get(lines[*line][6].clone())));
+                                        } 
+                                        else { //10
+                                            vars.insert(lines[*line][2].clone(), VariableValue::Int(vars.get(lines[*line][5].clone())) < lines[*line][6]);
+                                        }
+                                    }
+                                    else {
+                                        if let Some(VariableValue::Int(val)) = vars.get(&lines[*line][6]) { //01
+                                            vars.insert(lines[*line][2].clone(), lines[*line][5] < VariableValue::Int(vars.get(lines[*line][6].clone())));
+                                        } 
+                                        else { //00
+                                            vars.insert(lines[*line][2].clone(), lines[*line][5] < lines[*line][6]);
+                                        }
+                                    }
+                                }
+                             }
+                        }
+                        
+                    }
+                }
+                "inp" => {
+                    for i in 1..lines[*line].len() {
+                        let output = &lines[*line][i];
+                        if output.starts_with('"') && output.ends_with('"') {
+                            print!("{}", &output[1..output.len() - 1]);
+                        } else {
+                            print!("{}", vars.get(output).as_str());
                         }
                     }
+                    let mut s=String::new();
+                    let _=stdout().flush();
+                    stdin().read_line(&mut s).expect("woopsicles");
+                    if let Some('\n')=s.chars().next_back() {s.pop();}
+                    if let Some('\r')=s.chars().next_back() {s.pop();}
                 }
                 _ => {}
             }
